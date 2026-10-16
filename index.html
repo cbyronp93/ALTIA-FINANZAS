@@ -184,7 +184,7 @@ code{font-size:12px;background:var(--surface-2);border:1px solid var(--line);pad
       <form id="form" novalidate>
         <div class="row">
           <div class="f"><label for="iFecha">Fecha</label><input id="iFecha" type="date" required><span class="err"></span></div>
-          <div class="f"><label for="iMonto" id="lMonto">Monto del egreso (USD)</label><input id="iMonto" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0,00" required><span class="err"></span></div>
+          <div class="f"><label for="iMonto" id="lMonto">Monto del egreso (USD)</label><input id="iMonto" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" required><span class="err"></span></div>
         </div>
         <div class="f"><label for="iDetalle">Detalle</label><input id="iDetalle" type="text" maxlength="120" placeholder="Ej. Pautas Facebook" required><span class="err"></span></div>
         <div class="row">
@@ -492,7 +492,7 @@ function startEdit(fila){
   show('add');window.scrollTo(0,0);$('#formMsg').innerHTML='';
   document.querySelectorAll('#form .err').forEach(x=>x.textContent='');
   $('#iAux').value='';prepForm();
-  $('#iFecha').value=isoDate(r.fecha);$('#iMonto').value=r.ingreso||r.egreso;
+  $('#iFecha').value=isoDate(r.fecha);$('#iMonto').value=String(r.ingreso||r.egreso).replace('.',',');
   $('#iDetalle').value=r.detalle;$('#iCuenta').value=r.cuenta;
   const a=S.opts.aux.find(x=>key(x)===r.auxKey);
   if(a)$('#iAux').value=a;else{$('#iAux').value='__otro';$('#iAuxOtro').value=r.aux}
@@ -504,16 +504,34 @@ function startEdit(fila){
 }
 function cancelEdit(){S.edit=null;$('#form').reset();go('movs')}
 function toggleOtro(){$('#wAuxOtro').classList.toggle('hidden',$('#iAux').value!=='__otro')}
+// Acepta coma o punto decimal (teclado iPhone en español usa coma).
+// Si hay ambos, el último es el decimal: "1.234,56" y "1,234.56" -> 1234.56. Devuelve NaN si no es válido.
+function parseMonto(s){
+  s=String(s||'').replace(/[\s$]/g,'');
+  if(!/^\d[\d.,]*$/.test(s)||/[.,]$/.test(s))return NaN;
+  const i=Math.max(s.lastIndexOf(','),s.lastIndexOf('.'));
+  let ent=s,dec='';
+  // Un único separador con 1–2 decimales, o el último de dos separadores distintos, es el decimal.
+  if(i>=0){
+    const sep=s[i],other=sep===','?'.':',',after=s.slice(i+1);
+    const single=s.split(sep).length===2;
+    if((single&&!s.includes(other)&&after.length<=2)||(s.includes(other)&&s.lastIndexOf(other)<i)){ent=s.slice(0,i);dec=after}
+  }
+  if(/[.,]/.test(ent)&&!/^\d{1,3}([.,]\d{3})+$/.test(ent))return NaN;
+  ent=ent.replace(/[.,]/g,'');
+  if(dec.length>2)return NaN;
+  return Math.round(parseFloat(ent+'.'+(dec||'0'))*100)/100;
+}
 function setErr(id,msg){const f=$(id).closest('.f');f.querySelector('.err').textContent=msg||''}
 
 async function submit(e){
   e.preventDefault();$('#formMsg').innerHTML='';
-  const v={fecha:$('#iFecha').value,monto:parseFloat($('#iMonto').value),detalle:norm($('#iDetalle').value),
+  const v={fecha:$('#iFecha').value,monto:parseMonto($('#iMonto').value),detalle:norm($('#iDetalle').value),
     aux:$('#iAux').value==='__otro'?norm($('#iAuxOtro').value):$('#iAux').value,categoria:$('#iCat').value,cuenta:norm($('#iCuenta').value)};
   let ok=true;
   const chk=(id,cond,msg)=>{setErr(id,cond?'':msg);if(!cond)ok=false};
   chk('#iFecha',!!v.fecha,'Elige la fecha');
-  chk('#iMonto',v.monto>0,'Ingresa un monto mayor a 0');
+  chk('#iMonto',v.monto>0,isNaN(v.monto)?'Monto inválido. Usa solo números, con coma o punto decimal (ej. 20,98)':'Ingresa un monto mayor a 0');
   chk('#iDetalle',!!v.detalle,'Escribe un detalle');
   chk('#iAux',!!$('#iAux').value,'Elige de dónde salió el dinero');
   if($('#iAux').value==='__otro')chk('#iAuxOtro',!!v.aux,'Escribe el nombre del origen');
